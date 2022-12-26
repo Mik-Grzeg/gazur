@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"gazur/pkg/common"
-	"gazur/pkg/subscriptions/ignores"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"log"
 )
@@ -22,7 +21,7 @@ func merge(cs ...<-chan error) <-chan error {
 	return out
 }
 
-func PipelineStart(identity *common.Identity, configFile *string) error {
+func PipelineStart(identity *common.Identity, filters *Filter) error {
 	ctx := context.Background()
 
 	client, err := armsubscriptions.NewClient(identity, nil)
@@ -30,17 +29,6 @@ func PipelineStart(identity *common.Identity, configFile *string) error {
 		log.Fatalf("Unable to get subscriptions client: %v", err)
 	}
 	pager := GetPager(client)
-
-	// settings filter
-
-	ignoresLoader := ignores.LoaderFromFile{Path: configFile}
-	filterConfig, _ := ignores.GetSubIgnores(&ignoresLoader)
-
-	filters := Filter{}
-	filters.AddFilter(func(s *armsubscriptions.Subscription) bool {
-		_, exists := filterConfig.SubscriptionsToIgnore[*s.SubscriptionID]
-		return exists
-	})
 
 	// Getting data
 	fetching, fetchErr := ListSubsFromPager(ctx, pager)
