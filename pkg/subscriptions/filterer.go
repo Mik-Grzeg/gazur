@@ -36,6 +36,13 @@ func (f *Filter) run(subscription *armsubscriptions.Subscription) bool {
 	return true
 }
 
+func (f *Filter) FilterSub(in interface{}) interface{} {
+	if f.run(in.(*armsubscriptions.Subscription)) {
+		return *sub
+	}
+	return nil, nil
+}
+
 func (f *Filter) FilterSubs(c context.Context, in <-chan *armsubscriptions.Subscription) (<-chan *armsubscriptions.Subscription, <-chan error) {
 	out := make(chan *armsubscriptions.Subscription)
 	errc := make(chan error, 1)

@@ -49,3 +49,23 @@ func PipelineStart(identity *common.Identity, filters *Filter) error {
 		}
 	}
 }
+
+func check(identity *common.Identity, filters *Filter) error {
+	ctx := context.Background()
+
+	client, err := armsubscriptions.NewClient(identity, nil)
+	if err != nil {
+		log.Fatalf("Unable to get subscriptions client: %v", err)
+	}
+	pager := GetPager(client)
+
+	fetching, _ := ListSubsFromPager(ctx, pager)
+	taskManager := NewTaskManager().AddSource(&filters.FilterSub, fetching)
+
+	outC := taskManager.Run()
+
+	for elem := range outC {
+		log.Printf("Elem: %v", elem)
+	}
+
+}

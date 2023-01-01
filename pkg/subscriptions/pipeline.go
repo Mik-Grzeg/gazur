@@ -1,72 +1,97 @@
 package subscriptions
 
-type Executor[In any, Out any] func(chan In) (chan Out)
+type Executor func(interface{}) interface{}
 
-type TaskSupervisor[In any, Out any] struct {
-	errC chan error
-	tasks []task[In, Out]
+type TaskSupervisor struct {
+	errC  chan error
+	tasks []task
 }
 
-type TaskManager[In any, Out any] interface {
-	AddTask(executor Executor[In, Out]) task[In, Out]
-	Merge() <-chan interface{}
+type TaskManager interface {
+	AddSource(executor Executor, inC <-chan interface{}) TaskManager
+	AddTask(executor Executor) TaskManager
+	Run() chan interface{}
+	//Merge() <-chan interface{}
 }
 
-type task[In any, Out any] struct {
-	inC chan In
-	outC chan Out
-	executor Executor[In, Out]
+type task struct {
+	inC      <-chan interface{}
+	outC     chan interface{}
+	errC     chan error
+	executor Executor
 }
 
-func (s *TaskSupervisor[In, Out]) AddTask(executor Executor[In, Out]) task[In, Out] {
-	inC := make(chan In)
-}
-
-type pipeline[In any, Out any] struct {
-	dataC     chan In
-	errC      chan error
-	executors []Executor
-}
-
-func (p *pipeline[In, Out]) Pipe(executor Executor) Pipeline {
-	p.executors = append(p.executors, executor)
-	return p
-}
-
-func (p *pipeline[In, Out]) Merge() <-chan interface{} {
-	for i := 0; i < len(p.executors); i++ {
-		p.dataC, p.errC = run(p.dataC, p.executors[i])
-	}
-	return p.dataC
-}
-
-func New[In any, Out any](f func(chan In)) Pipeline {
-	inC := make(chan In)
-	go f(inC)
-	return &pipeline[In, Out]{
-		dataC:     inC,
-		errC:      make(chan error),
-		executors: []Executor{},
-	}
-}
-
-func run(
-	inC <-chan interface{},
-	f Executor,
-) (chan interface{}, chan error) {
-	outC := make(chan interface{})
-	errC := make(chan error)
-
-	go func() {
-		defer close(outC)
-		for v := range inC {
-			res, err := f(v)
-			if err != nil {
-				errC <- err
-				continue
-			}
-			outC <- res
+func (t *task) run() {
+	for {
+		select {
+		case elem := <-t.inC:
+			t.outC <- t.executor(elem)
+		case <-t.errC:
+			return
 		}
-	}()
-	return outC, errC
+	}
 }
+
+func (s *TaskSupervisor) Run() chan interface{} {
+	for _, task := range s.tasks {
+		go task.run()
+	}
+	return s.tasks[len(s.tasks)-1].outC
+}
+
+func (s *TaskSupervisor) AddSource(executor Executor, inC <-chan interface{}) TaskManager {
+	outC := make(chan interface{})
+
+	task := task{
+		inC,
+		outC,
+		s.errC,
+		executor,
+	}
+
+	s.tasks = append(s.tasks, task)
+	return s
+}
+
+func (s *TaskSupervisor) AddTask(executor Executor) TaskManager {
+	inC := s.tasks[len(s.tasks)-1].outC
+	outC := make(chan interface{})
+
+	task := task{
+		inC,
+		outC,
+		s.errC,
+		executor,
+	}
+
+	s.tasks = append(s.tasks, task)
+	return s
+}
+
+func NewTaskManager() TaskManager {
+	return &TaskSupervisor{
+		errC:  make(chan error),
+		tasks: []task{},
+	}
+}
+
+//func run(
+//	inC <-chan interface{},
+//	f Executor,
+//) (chan interface{}, chan error) {
+//	outC := make(chan interface{})
+//	errC := make(chan error)
+//
+//	go func() {
+//		defer close(outC)
+//		for v := range inC {
+//			res, err := f(v)
+//			if err != nil {
+//				errC <- err
+//				continue
+//			}
+//			outC <- res
+//		}
+//	}()
+//	return outC, errC
+//}
